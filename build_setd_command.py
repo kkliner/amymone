@@ -13,13 +13,13 @@ Payload bytes:
     [3] day   (1-31)
     [4] hour  (0-23)
     [5] minute(0-59)
-NOTE: there is no seconds field in :SETD.
-NOTE: year endianness is OPPOSITE of the :D003 read payload (which returns year LE).
+NOTE: There is no seconds field in :SETD.
+NOTE: Year endianness is OPPOSITE of the :D003 read payload (which returns year LE).
 NOTE: Intentional 0x0d's must be escaped by a second 0x0d to avoid incorrect CR terminator.
 
-Usage:
+Example Usage of Fedora 44:
 Set up the terminal interface: stty -F /dev/ttyUSB1 115200 cs8 -cstopb -parenb raw -echo
-Send the generated 'frame repr' over UART using: printf 'frame repr' > /dev/ttyUSB0
+Send the generated 'frame repr' over UART with: printf 'frame repr' > /dev/ttyUSB0
 Responses can be recorded with: cat /dev/ttyUSB0 > response_1.bin
 Records can be viewed with: xxd response_1.bin
 """
@@ -29,7 +29,7 @@ from datetime import datetime
 
 
 def build_setd(year, month, day, hour, minute):
-    assert 2000 <= year <= 2099, "year out of sane range"
+    assert 2000 <= year <= 2099, "year out of nominal range"
     assert 1 <= month <= 12 and 1 <= day <= 31
     assert 0 <= hour <= 23 and 0 <= minute <= 59
     raw_payload = bytes([
