@@ -61,7 +61,10 @@ def frame_formatter(raw_frame: bytes) -> bytes:
 
 
 def extract_response_frame(
-    buffer: bytes | bytearray, resp_code: bytes, frame_length: int
+    buffer: bytes | bytearray,
+    resp_code: bytes,
+    frame_length: int | None = None,
+    verify_checksum: bool = True,
 ) -> bytes:
     """Locate, unescape, and validate the header, footer, and checksum of a response frame."""
     expected_header = CMD_HEADER + resp_code
@@ -81,17 +84,19 @@ def extract_response_frame(
     body = raw_frame[: -len(CMD_FOOTER)].replace(b"\r\r", b"\r")
     frame = body + CMD_FOOTER
 
-    if len(frame) != frame_length:
+    if frame_length is not None and len(frame) != frame_length:
         raise ValueError(
             f"Unexpected frame length ({len(frame)} bytes); expected {frame_length} bytes"
         )
 
-    verify_frame_checksum(frame)
+    if verify_checksum:
+        verify_frame_checksum(frame)
+
     return frame
 
 
-def unpack_bms_date(data: bytes | bytearray, offset: int) -> datetime | None:
-    """Unpack a 6-byte BMS date (<HBBBB: year, month, day, hour, minute)."""
+def unpack_date(data: bytes | bytearray, offset: int) -> datetime | None:
+    """Unpack a 6-byte date (<HBBBB: year, month, day, hour, minute)."""
     year, month, day, hour, minute = struct.unpack_from("<HBBBB", data, offset)
     if year == 0 or month == 0 or day == 0:
         return None
@@ -103,7 +108,7 @@ def build_r001() -> bytes:
 
 
 def parse_d001(buffer: bytes | bytearray) -> dict[str, Any]:
-    """Locate and parse a :D001 telemetry frame from a raw UART buffer."""
+    """Locate and parse a :D001 telemetry frame."""
     frame = extract_response_frame(buffer, D001, 61)
 
     # Offset 5: lengthHeader (1s), length (i -> INT32 LSB), dataHeader (1s)
@@ -144,7 +149,7 @@ def build_r002() -> bytes:
 
 
 def parse_d002(buffer: bytes | bytearray) -> dict[str, Any]:
-    """Locate and parse a :D002 status/alarm frame from a raw UART buffer."""
+    """Locate and parse a :D002 status/alarm frame."""
     frame = extract_response_frame(buffer, D002, 41)
 
     # Offset 5: lengthHeader (1s), length (i -> INT32 LSB), dataHeader (1s)
@@ -195,12 +200,12 @@ def parse_d003(buffer: bytes | bytearray) -> dict[str, Any]:
         "bms_firmware_version": f"{fw_major}.{fw_minor:02d}",
         "serial_number": serial_number,
         "battery_config": battery_config,
-        "battery_production_date": unpack_bms_date(frame, 28),
+        "battery_production_date": unpack_date(frame, 28),
         "full_charge_cycles": full_cycles,
         "partial_charge_cycles": partial_cycles,
-        "last_full_charge": unpack_bms_date(frame, 38),
-        "last_charge": unpack_bms_date(frame, 44),
-        "actual_date": unpack_bms_date(frame, 50),
+        "last_full_charge": unpack_date(frame, 38),
+        "last_charge": unpack_date(frame, 44),
+        "actual_date": unpack_date(frame, 50),
         "checksum": bytes(frame[-12:-10]),
         "end_terminator": bytes(frame[-10:]),
     }
@@ -210,6 +215,53 @@ def parse_d003(buffer: bytes | bytearray) -> dict[str, Any]:
 
 def build_r004() -> bytes:
     return frame_formatter(R004)
+
+
+def parse_d004(buffer: bytes | bytearray) -> dict[str, Any]:
+    """Locate and parse a variable-length :D004 event/alarm history frame."""
+    frame = extract_response_frame(buffer, D004, frame_length=None, verify_checksum=False)
+
+    if len(frame) < 22:
+        raise ValueError(f"Frame too short ({len(frame)} bytes); expected at least 22 bytes")
+
+    # Offset 5: lengthHeader (1s), length (I -> UINT32 LSB)
+    _, length = struct.unpack_from("<1sI", frame, 5)
+    payload = frame[10:-12]
+
+    # Empty log edge case: firmware sends 4-byte b"NULL" and checksum b"X\xff"
+    if payload == b"NULL":
+        if bytes(frame[-12:-10]) != CHECKSUM_HEADER + b"\xff":
+            raise ValueError(
+                f"Checksum mismatch on empty :D004 frame: got {bytes(frame[-12:-10]).hex(' ')}"
+            )
+        events: list[dict[str, Any]] = []
+    else:
+        verify_frame_checksum(frame)
+        if len(payload) != length or len(payload) % 10 != 0:
+            raise ValueError(
+                f"Invalid :D004 payload length ({len(payload)} bytes); expected {length} bytes (multiple of 10)"
+            )
+
+        events = []
+        for offset in range(0, len(payload), 10):
+            # Each 10-byte record: 'D' (1s), eventType (B), eventCode (B), 'A' (1s), date (6B)
+            _, event_type, event_code, _ = struct.unpack_from("<1sBB1s", payload, offset)
+            events.append(
+                {
+                    "event_type": event_type,
+                    "event_code": event_code,
+                    "timestamp": unpack_date(payload, offset + 4),
+                }
+            )
+
+    return {
+        "header": bytes(frame[0:5]).decode("ascii"),
+        "length": length,
+        "event_count": len(events),
+        "events": events,
+        "checksum": bytes(frame[-12:-10]),
+        "end_terminator": bytes(frame[-10:]),
+    }
 
 
 def build_r005() -> bytes:
