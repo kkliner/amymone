@@ -26,25 +26,7 @@ Records can be viewed with: xxd response_1.bin
 
 import argparse
 from datetime import datetime
-
-
-def build_setd(year, month, day, hour, minute):
-    assert 2000 <= year <= 2099, "year out of nominal range"
-    assert 1 <= month <= 12 and 1 <= day <= 31
-    assert 0 <= hour <= 23 and 0 <= minute <= 59
-    raw_payload = bytes([
-        (year >> 8) & 0xFF,   # year high (big-endian)
-        year & 0xFF,          # year low
-        month, day, hour, minute,
-    ])
-    escaped_payload = raw_payload.replace(b'\r', b'\r\r')
-    return b':SETD' + escaped_payload + b'\r\n'
-
-
-def fmt_byte(val):
-    if val == 0x0D:
-        return "0d 0d  (escaped 0x0d -> doubled to avoid CR terminator)"
-    return f"{val:02x}"
+import amymone_functions as amy
 
 
 def main():
@@ -55,7 +37,30 @@ def main():
         t = datetime.strptime(args.dt, '%Y-%m-%d %H:%M')
     else:
         t = datetime.now()
-    frame = build_setd(t.year, t.month, t.day, t.hour, t.minute)
+
+    frame = amy.build_setd(t.year, t.month, t.day, t.hour, t.minute)
+
+    # Run each payload byte through frame_formatter (stripping trailing \r\n)
+    # so the breakdown reflects the exact bytes produced on the wire.
+    fields = [
+        ('high  ', (t.year >> 8) & 0xFF),
+        ('low   ', t.year & 0xFF),
+        ('month ', t.month),
+        ('day   ', t.day),
+        ('hour  ', t.hour),
+        ('minute', t.minute),
+    ]
+    formatted = {
+        name: (
+            amy.frame_formatter(bytes([val]))
+            .removeprefix(amy.CMD_PREAMBLE)
+            .removesuffix(amy.CMD_POSTAMBLE)
+            .hex(' ')
+        )
+        for name, val in fields
+    }
+
+
     print(f'date/time : {t:%Y-%m-%d %H:%M}')
     print(f'frame hex : {frame.hex()}')
     print(f'frame len : {len(frame)} bytes')
@@ -63,12 +68,12 @@ def main():
     print('breakdown :')
     print('  ":SETD" =', b':SETD'.hex())
     print(f'  year    = {t.year:#06x}')
-    print(f'    high  = {fmt_byte((t.year >> 8) & 0xFF)}')
-    print(f'    low   = {fmt_byte(t.year & 0xFF)}')
-    print(f'  month   = {fmt_byte(t.month)}')
-    print(f'  day     = {fmt_byte(t.day)}')
-    print(f'  hour    = {fmt_byte(t.hour)}')
-    print(f'  minute  = {fmt_byte(t.minute)}')
+    print(f'    high  = {formatted["high  "]}')
+    print(f'    low   = {formatted["low   "]}')
+    print(f'  month   = {formatted["month "]}')
+    print(f'  day     = {formatted["day   "]}')
+    print(f'  hour    = {formatted["hour  "]}')
+    print(f'  minute  = {formatted["minute"]}')
     print('  CR      = 0d     (end-of-frame marker)')
     print('  LF      = 0a     (confirms CR is terminator, not escaped 0x0d)')
 
