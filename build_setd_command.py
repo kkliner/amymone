@@ -53,8 +53,8 @@ def main():
     formatted = {
         name: (
             amy.frame_formatter(bytes([val]))
-            .removeprefix(amy.CMD_PREAMBLE)
-            .removesuffix(amy.CMD_POSTAMBLE)
+            .removeprefix(amy.CMD_HEADER)
+            .removesuffix(amy.CMD_FOOTER)
             .hex(' ')
         )
         for name, val in fields

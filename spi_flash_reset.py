@@ -44,7 +44,7 @@ def main() -> None:
     # --- Block 1: Cumulative Counters & Full Charge Cycles at 0x000000 (31 bytes + 4-byte CRC) ---
     blk1 = bytearray(image[0x00:0x1F])
     stored_crc1, = struct.unpack(FMT_U32, image[0x1F:0x23])
-    computed_crc1 = amy.bms_crc32(blk1)
+    computed_crc1 = amy.crc32(blk1)
 
     if stored_crc1 != computed_crc1:
         raise ValueError(
@@ -60,7 +60,7 @@ def main() -> None:
 
     # Zero cumulative counters (0x00..0x0F) and Full Charge Cycles (0x10..0x13)
     blk1[0x00:0x14] = b"\x00" * 20
-    new_crc1 = amy.bms_crc32(blk1)
+    new_crc1 = amy.crc32(blk1)
     image[0x00:0x1F] = blk1
     image[0x1F:0x23] = struct.pack(FMT_U32, new_crc1)
     print(f"[0x000000] Updated CRC32      : {new_crc1:#010x}")
@@ -69,7 +69,7 @@ def main() -> None:
     blk2_off = 0x200000
     blk2 = bytearray(image[blk2_off : blk2_off + 0x2D])
     stored_crc2, = struct.unpack(FMT_U32, image[blk2_off + 0x2D : blk2_off + 0x31])
-    computed_crc2 = amy.bms_crc32(blk2)
+    computed_crc2 = amy.crc32(blk2)
 
     if stored_crc2 == computed_crc2:
         serial = blk2[0x02:0x0E].decode("ascii", errors="replace")
@@ -96,7 +96,7 @@ def main() -> None:
 
         # Zero Full Charge Cycles (0x17..0x18) and Partial Charge Cycles (0x19..0x1A)
         blk2[0x17:0x1B] = b"\x00\x00\x00\x00"
-        new_crc2 = amy.bms_crc32(blk2)
+        new_crc2 = amy.crc32(blk2)
         image[blk2_off : blk2_off + 0x2D] = blk2
         image[blk2_off + 0x2D : blk2_off + 0x31] = struct.pack(FMT_U32, new_crc2)
         print(f"[0x200000] Updated CRC32      : {new_crc2:#010x}")
