@@ -46,11 +46,21 @@ ALARM_CODES: dict[int, str] = {
     14: "OVERTEMPERATURE",
 }
 
-
 BMS_STATUS_BITS: dict[int, tuple[str, str]] = {
     0: ("MOSFET_DSG_OFF", "MOSFET_DSG_ON"),
     1: ("MOSFET_CHG_OFF", "MOSFET_CHG_ON"),
 }
+
+
+def decode_battery_config(battery_config: bytes | bytearray) -> dict[str, int]:
+    """Decode the 3-byte :D003 batteryConfig field into pack topology and cell type."""
+    if len(battery_config) != 3:
+        raise ValueError(f"Expected 3-byte battery_config, got {len(battery_config)} bytes")
+    return {
+        "cells_in_serial": battery_config[0],
+        "cells_in_parallel": battery_config[1],
+        "cells_type": battery_config[2],
+    }
 
 
 def decode_alarm_codes(alarm_code: bytes | bytearray | int) -> list[str]:
@@ -249,6 +259,7 @@ def parse_d003(buffer: bytes | bytearray) -> dict[str, Any]:
         "bms_firmware_version": f"{fw_major}.{fw_minor:02d}",
         "serial_number": serial_number,
         "battery_config": battery_config,
+        **decode_battery_config(battery_config),
         "battery_production_date": unpack_date(frame, 28),
         "full_charge_cycles": full_cycles,
         "partial_charge_cycles": partial_cycles,
